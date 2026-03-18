@@ -20,6 +20,8 @@ python md2nc.py [input] [--description PATH] [--input-html PATH] [--output-html 
 | `--output-html` |  输出格式输出路径  |   `output.html`    |
 |  `--notation`   | 说明/提示输出路径  |  `notation.html`   |
 
+你可以在项目仓库中查看展示效果。
+
 ## 开源许可
 
 本项目遵循 [MIT 开源协议](./LICENSE)。

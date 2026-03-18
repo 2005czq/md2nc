@@ -1,0 +1,13 @@
+&lt;details&gt;<br />
+&lt;summary&gt;什么是模，能吃吗？&lt;/summary&gt;<br />
+&lt;blockquote&gt;<br />
+如果你点开了我，说明你没有参加或者没有认真听最后一节速成课。<br />
+模是指“求余数”，如 <img src="https://www.nowcoder.com/equation?tex=10" alt="10" /> 除以 <img src="https://www.nowcoder.com/equation?tex=3" alt="3" /> 的余数是 <img src="https://www.nowcoder.com/equation?tex=1" alt="1" />，则称 <img src="https://www.nowcoder.com/equation?tex=10" alt="10" /> 模 <img src="https://www.nowcoder.com/equation?tex=3" alt="3" /> 等于 <img src="https://www.nowcoder.com/equation?tex=1" alt="1" />，或者说 <img src="https://www.nowcoder.com/equation?tex=10" alt="10" /> 对 <img src="https://www.nowcoder.com/equation?tex=3" alt="3" /> 取模的结果为 <img src="https://www.nowcoder.com/equation?tex=1" alt="1" />。在数学上写作<br />
+<center><img src="https://www.nowcoder.com/equation?tex=%20%20%20%20%20%20%20%2010%5Cbmod3%3D1%0A%20%20%20%20%20%20%20%20" alt="        10\bmod3=1&lt;br /&gt;        " /></center>
+对于本题，模有一个显而易见的性质：<br />
+<center><img src="https://www.nowcoder.com/equation?tex=%20%20%20%20%20%20%20%20%7B(a_1a_2%5Ccdots%20a_k)%7D%5Cbmod%20N%20%3D%20%7B((%7Ba_1%7D%5Cbmod%20N)(%7Ba_2%7D%5Cbmod%20N)%5Ccdots(%7Ba_k%7D%5Cbmod%20N))%7D%5Cbmod%20N%0A%09%09" alt="        {(a_1a_2\cdots a_k)}\bmod N = {(({a_1}\bmod N)({a_2}\bmod N)\cdots({a_k}\bmod N))}\bmod N&lt;br /&gt;		" /></center>
+例如<br />
+<center><img src="https://www.nowcoder.com/equation?tex=%20%20%20%20%20%20%20%20%5Cbegin%7Baligned%7D%0A%20%20%20%20%20%20%20%20%7B(4%5Ccdot8%5Ccdot7)%7D%5Cbmod%203%26%3D%7B((%7B4%7D%5Cbmod3)%5Ccdot(%7B8%7D%5Cbmod3)%5Ccdot(%7B7%7D%5Cbmod3))%7D%5Cbmod3%20%5C%5C%0A%20%20%20%20%20%20%20%20%7B224%7D%5Cbmod3%26%3D%7B(1%5Ccdot2%5Ccdot1)%7D%5Cbmod3%20%5C%5C%0A%20%20%20%20%20%20%20%202%26%3D2%0A%20%20%20%20%20%20%20%20%5Cend%7Baligned%7D%0A%20%20%20%20%20%20%20%20" alt="        \begin{aligned}&lt;br /&gt;        {(4\cdot8\cdot7)}\bmod 3&amp;={(({4}\bmod3)\cdot({8}\bmod3)\cdot({7}\bmod3))}\bmod3 \\&lt;br /&gt;        {224}\bmod3&amp;={(1\cdot2\cdot1)}\bmod3 \\&lt;br /&gt;        2&amp;=2&lt;br /&gt;        \end{aligned}&lt;br /&gt;        " /></center>
+这意味着你可以在做乘法之前可以随意（对同一个数）取模。<br />
+&lt;/blockquote&gt;<br />
+&lt;/details&gt;<br />
