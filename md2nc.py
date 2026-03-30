@@ -14,6 +14,8 @@ from urllib.parse import quote
 
 LIST_ITEM_RE = re.compile(r"^([ \t]*)([-+*]|\d+\.)\s+(.*)$")
 BLOCKQUOTE_RE = re.compile(r"^[ \t]*>\s?(.*)$")
+ATX_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+FENCED_CODE_RE = re.compile(r"^([ \t]*)```(.*)$")
 SECTION_KEYS = ("background", "description", "input", "output", "notation")
 VOID_HTML_TAGS = {
     "area",
@@ -150,6 +152,10 @@ def find_wrapped_closing(text: str, start: int, delimiter: str) -> int:
             return idx
 
         idx += len(delimiter)
+
+
+def escape_code_block(text: str) -> str:
+    return html.escape(text, quote=False)
 
 
 def find_html_tag_end(text: str, start: int) -> Optional[int]:
@@ -330,6 +336,15 @@ def render_inline(text: str) -> str:
                 i = end + 2
                 continue
 
+        if text.startswith("__", i) and can_open_wrapped(text, i, "__"):
+            end = find_wrapped_closing(text, i + 2, "__")
+            if end != -1:
+                flush_plain()
+                inner = render_inline(text[i + 2 : end])
+                parts.append(f"<strong>{inner}</strong>")
+                i = end + 2
+                continue
+
         if text.startswith("==", i) and can_open_wrapped(text, i, "=="):
             end = find_wrapped_closing(text, i + 2, "==")
             if end != -1:
@@ -350,6 +365,15 @@ def render_inline(text: str) -> str:
 
         if text[i] == "*" and not text.startswith("**", i) and can_open_wrapped(text, i, "*"):
             end = find_wrapped_closing(text, i + 1, "*")
+            if end != -1:
+                flush_plain()
+                inner = render_inline(text[i + 1 : end])
+                parts.append(f"<em>{inner}</em>")
+                i = end + 1
+                continue
+
+        if text[i] == "_" and not text.startswith("__", i) and can_open_wrapped(text, i, "_"):
+            end = find_wrapped_closing(text, i + 1, "_")
             if end != -1:
                 flush_plain()
                 inner = render_inline(text[i + 1 : end])
@@ -456,6 +480,29 @@ def collect_indented_block(lines: List[str], start: int, min_indent: int) -> Tup
 def render_nested_block(lines: List[str], depth: int) -> List[str]:
     rendered = render_markdown(lines)
     return indent_html_block(rendered, depth=depth)
+
+
+def parse_fenced_code_block(lines: List[str], start: int) -> Tuple[List[str], int]:
+    match = FENCED_CODE_RE.match(lines[start])
+    if match is None:
+        return [], start
+
+    fence_indent = indent_width(match.group(1))
+    language = html.escape(match.group(2).strip(), quote=True)
+    class_attr = f' class="language-{language}"' if language else ""
+
+    code_lines: List[str] = []
+    i = start + 1
+    while i < len(lines):
+        end_match = FENCED_CODE_RE.match(lines[i])
+        if end_match is not None and indent_width(end_match.group(1)) == fence_indent:
+            i += 1
+            break
+        code_lines.append(strip_block_indent(lines[i], fence_indent))
+        i += 1
+
+    code = escape_code_block("\n".join(code_lines))
+    return [f"<pre><code{class_attr}>{code}</code></pre>"], i
 
 
 def parse_list(lines: List[str], start: int, base_indent: int, depth: int) -> Tuple[List[str], int]:
@@ -594,6 +641,19 @@ def render_markdown(lines: List[str]) -> str:
         if not stripped:
             rendered.append("")
             i += 1
+            continue
+
+        heading_match = ATX_HEADING_RE.match(stripped)
+        if heading_match:
+            level = len(heading_match.group(1))
+            rendered.append(f"<h{level}>{render_inline(heading_match.group(2))}</h{level}>")
+            i += 1
+            continue
+
+        fenced_match = FENCED_CODE_RE.match(line)
+        if fenced_match:
+            block, i = parse_fenced_code_block(lines, i)
+            rendered.extend(block)
             continue
 
         if stripped.startswith("$$"):

@@ -42,6 +42,30 @@ class RenderMarkdownTests(unittest.TestCase):
 
         self.assertEqual("3 * 4 * 5 and a == b == c", rendered)
 
+    def test_headings_and_fenced_code_blocks(self) -> None:
+        lines = [
+            "## 小标题",
+            "",
+            "```cpp",
+            "int main() {",
+            "    return 0;",
+            "}",
+            "```",
+        ]
+
+        rendered = md2nc.render_markdown(lines)
+
+        self.assertIn("<h2>小标题</h2>", rendered)
+        self.assertIn("<pre><code class=\"language-cpp\">", rendered)
+        self.assertIn("int main() {", rendered)
+        self.assertIn("    return 0;", rendered)
+
+    def test_underscore_emphasis_variants(self) -> None:
+        rendered = md2nc.render_inline("__bold__ and _italic_")
+
+        self.assertIn("<strong>bold</strong>", rendered)
+        self.assertIn("<em>italic</em>", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
