@@ -325,6 +325,53 @@ def parse_block_formula(lines: List[str], start: int) -> Tuple[str, int]:
     return formula_to_img(formula, is_block=True), i
 
 
+def block_indent(line: str) -> int:
+    match = re.match(r"^([ \t]*)", line)
+    return indent_width(match.group(1)) if match else 0
+
+
+def strip_block_indent(line: str, width: int) -> str:
+    consumed = 0
+    idx = 0
+
+    while idx < len(line) and consumed < width:
+        ch = line[idx]
+        if ch == " ":
+            consumed += 1
+        elif ch == "\t":
+            consumed += 4
+        else:
+            break
+        idx += 1
+
+    return line[idx:]
+
+
+def collect_indented_block(lines: List[str], start: int, min_indent: int) -> Tuple[List[str], int]:
+    block: List[str] = []
+    i = start
+
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip():
+            block.append("")
+            i += 1
+            continue
+
+        if block_indent(line) < min_indent:
+            break
+
+        block.append(strip_block_indent(line, min_indent))
+        i += 1
+
+    return block, i
+
+
+def render_nested_block(lines: List[str], depth: int) -> List[str]:
+    rendered = render_markdown(lines)
+    return indent_html_block(rendered, depth=depth)
+
+
 def parse_list(lines: List[str], start: int, base_indent: int, depth: int) -> Tuple[List[str], int]:
     first = LIST_ITEM_RE.match(lines[start])
     if first is None:
@@ -389,14 +436,17 @@ def parse_list(lines: List[str], start: int, base_indent: int, depth: int) -> Tu
             if continuation_indent <= base_indent:
                 break
 
-            stripped_next = next_line.strip()
-            if stripped_next.startswith("$$"):
-                formula_img, i = parse_block_formula(lines, i)
+            nested_lines, i = collect_indented_block(lines, i, base_indent + 1)
+            if not nested_lines:
+                break
+
+            nested_stripped = next((line.strip() for line in nested_lines if line.strip()), "")
+            if nested_stripped.startswith("$$"):
+                formula_img, _ = parse_block_formula(nested_lines, 0)
                 out.append(f"{content_indent}<center>{formula_img}</center>")
                 continue
 
-            out.append(f"{content_indent}{render_inline(stripped_next)}<br />")
-            i += 1
+            out.extend(render_nested_block(nested_lines, depth + 2))
 
         out.append(f"{li_indent}</li>")
 
