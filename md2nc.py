@@ -105,6 +105,53 @@ def find_closing(text: str, start: int, delimiter: str) -> int:
         idx += len(delimiter)
 
 
+def adjacent_chars(text: str, idx: int, delimiter: str) -> Tuple[str, str]:
+    before = text[idx - 1] if idx > 0 else ""
+    after_idx = idx + len(delimiter)
+    after = text[after_idx] if after_idx < len(text) else ""
+    return before, after
+
+
+def can_open_wrapped(text: str, idx: int, delimiter: str) -> bool:
+    _, after = adjacent_chars(text, idx, delimiter)
+    if not after or after.isspace():
+        return False
+
+    before, _ = adjacent_chars(text, idx, delimiter)
+    if before.isalnum() and after.isalnum():
+        return False
+
+    return True
+
+
+def can_close_wrapped(text: str, idx: int, delimiter: str) -> bool:
+    before, after = adjacent_chars(text, idx, delimiter)
+    if not before or before.isspace():
+        return False
+
+    if before.isalnum() and after.isalnum():
+        return False
+
+    return True
+
+
+def has_wrapped_content(content: str) -> bool:
+    return bool(content) and content == content.strip()
+
+
+def find_wrapped_closing(text: str, start: int, delimiter: str) -> int:
+    idx = start
+    while True:
+        idx = find_closing(text, idx, delimiter)
+        if idx == -1:
+            return -1
+
+        if can_close_wrapped(text, idx, delimiter) and has_wrapped_content(text[start:idx]):
+            return idx
+
+        idx += len(delimiter)
+
+
 def find_html_tag_end(text: str, start: int) -> Optional[int]:
     if start >= len(text) or text[start] != "<":
         return None
@@ -253,6 +300,18 @@ def render_inline(text: str) -> str:
             plain.clear()
 
     while i < len(text):
+        if text.startswith("[", i):
+            end_text = find_closing(text, i + 1, "]")
+            if end_text != -1 and end_text + 1 < len(text) and text[end_text + 1] == "(":
+                end_url = find_closing(text, end_text + 2, ")")
+                if end_url != -1:
+                    flush_plain()
+                    label = render_inline(text[i + 1 : end_text])
+                    href = html.escape(text[end_text + 2 : end_url], quote=True)
+                    parts.append(f'<a href="{href}">{label}</a>')
+                    i = end_url + 1
+                    continue
+
         if text.startswith("`", i):
             end = find_closing(text, i + 1, "`")
             if end != -1:
@@ -262,13 +321,40 @@ def render_inline(text: str) -> str:
                 i = end + 1
                 continue
 
-        if text.startswith("**", i):
-            end = find_closing(text, i + 2, "**")
+        if text.startswith("**", i) and can_open_wrapped(text, i, "**"):
+            end = find_wrapped_closing(text, i + 2, "**")
             if end != -1:
                 flush_plain()
                 inner = render_inline(text[i + 2 : end])
                 parts.append(f"<strong>{inner}</strong>")
                 i = end + 2
+                continue
+
+        if text.startswith("==", i) and can_open_wrapped(text, i, "=="):
+            end = find_wrapped_closing(text, i + 2, "==")
+            if end != -1:
+                flush_plain()
+                inner = render_inline(text[i + 2 : end])
+                parts.append(f"<mark>{inner}</mark>")
+                i = end + 2
+                continue
+
+        if text.startswith("~~", i) and can_open_wrapped(text, i, "~~"):
+            end = find_wrapped_closing(text, i + 2, "~~")
+            if end != -1:
+                flush_plain()
+                inner = render_inline(text[i + 2 : end])
+                parts.append(f"<del>{inner}</del>")
+                i = end + 2
+                continue
+
+        if text[i] == "*" and not text.startswith("**", i) and can_open_wrapped(text, i, "*"):
+            end = find_wrapped_closing(text, i + 1, "*")
+            if end != -1:
+                flush_plain()
+                inner = render_inline(text[i + 1 : end])
+                parts.append(f"<em>{inner}</em>")
+                i = end + 1
                 continue
 
         if text[i] == "$" and not text.startswith("$$", i):
