@@ -6,13 +6,31 @@ from __future__ import annotations
 import argparse
 import html
 import re
+import textwrap
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 
 LIST_ITEM_RE = re.compile(r"^([ \t]*)([-+*]|\d+\.)\s+(.*)$")
+BLOCKQUOTE_RE = re.compile(r"^[ \t]*>\s?(.*)$")
 SECTION_KEYS = ("background", "description", "input", "output", "notation")
+VOID_HTML_TAGS = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+}
 
 
 def normalize_heading(title: str) -> Optional[str]:
@@ -87,6 +105,143 @@ def find_closing(text: str, start: int, delimiter: str) -> int:
         idx += len(delimiter)
 
 
+def find_html_tag_end(text: str, start: int) -> Optional[int]:
+    if start >= len(text) or text[start] != "<":
+        return None
+
+    if text.startswith("<!--", start):
+        end = text.find("-->", start + 4)
+        return end + 3 if end != -1 else None
+
+    i = start + 1
+    if i >= len(text):
+        return None
+
+    if text[i] == "/":
+        i += 1
+        if i >= len(text) or not text[i].isalpha():
+            return None
+    elif text[i] in "!?":
+        i += 1
+    elif not text[i].isalpha():
+        return None
+
+    if text[start + 1] not in "!?":
+        while i < len(text) and (text[i].isalnum() or text[i] in "-_:"):
+            i += 1
+
+    quote_char: Optional[str] = None
+    while i < len(text):
+        ch = text[i]
+        if quote_char is not None:
+            if ch == quote_char:
+                quote_char = None
+        else:
+            if ch in "\"'":
+                quote_char = ch
+            elif ch == ">":
+                return i + 1
+            elif ch == "<":
+                return None
+        i += 1
+
+    return None
+
+
+def is_html_only_line(text: str) -> bool:
+    i = 0
+    saw_tag = False
+
+    while i < len(text):
+        if text[i].isspace():
+            i += 1
+            continue
+
+        end = find_html_tag_end(text, i)
+        if end is None:
+            return False
+
+        saw_tag = True
+        i = end
+
+    return saw_tag
+
+
+def classify_html_tag(tag: str) -> Tuple[str, Optional[str]]:
+    if tag.startswith("<!--"):
+        return "comment", None
+
+    if len(tag) < 3:
+        return "invalid", None
+
+    i = 1
+    if tag[i] == "/":
+        i += 1
+        start = i
+        while i < len(tag) and (tag[i].isalnum() or tag[i] in "-_:"):
+            i += 1
+        return "close", tag[start:i].lower() or None
+
+    if tag[i] in "!?":
+        return "special", None
+
+    start = i
+    while i < len(tag) and (tag[i].isalnum() or tag[i] in "-_:"):
+        i += 1
+
+    name = tag[start:i].lower()
+    if not name:
+        return "invalid", None
+
+    if tag[:-1].rstrip().endswith("/") or name in VOID_HTML_TAGS:
+        return "self", name
+
+    return "open", name
+
+
+def is_raw_html_line(text: str) -> bool:
+    if is_html_only_line(text):
+        return True
+
+    if not text.startswith("<"):
+        return False
+
+    stack: List[str] = []
+    saw_tag = False
+    i = 0
+
+    while i < len(text):
+        if text[i] != "<":
+            if not stack:
+                return False
+
+            next_tag = text.find("<", i)
+            if next_tag == -1:
+                i = len(text)
+            else:
+                i = next_tag
+            continue
+
+        end = find_html_tag_end(text, i)
+        if end is None:
+            return False
+
+        saw_tag = True
+        tag_type, tag_name = classify_html_tag(text[i:end])
+        if tag_type == "open":
+            stack.append(tag_name or "")
+        elif tag_type == "close":
+            if not stack or stack[-1] != tag_name:
+                return False
+            stack.pop()
+        elif tag_type == "invalid":
+            return False
+
+        i = end
+
+    return saw_tag and not stack
+
+
 def render_inline(text: str) -> str:
     parts: List[str] = []
     plain: List[str] = []
@@ -125,6 +280,14 @@ def render_inline(text: str) -> str:
                 i = end + 1
                 continue
 
+        if text[i] == "<":
+            end = find_html_tag_end(text, i)
+            if end is not None:
+                flush_plain()
+                parts.append(text[i:end])
+                i = end
+                continue
+
         plain.append(text[i])
         i += 1
 
@@ -158,7 +321,7 @@ def parse_block_formula(lines: List[str], start: int) -> Tuple[str, int]:
         formula_lines.append(current)
         i += 1
 
-    formula = "\n".join(formula_lines).strip("\n")
+    formula = textwrap.dedent("\n".join(formula_lines)).strip("\n")
     return formula_to_img(formula, is_block=True), i
 
 
@@ -226,7 +389,13 @@ def parse_list(lines: List[str], start: int, base_indent: int, depth: int) -> Tu
             if continuation_indent <= base_indent:
                 break
 
-            out.append(f"{content_indent}{render_inline(next_line.strip())}<br />")
+            stripped_next = next_line.strip()
+            if stripped_next.startswith("$$"):
+                formula_img, i = parse_block_formula(lines, i)
+                out.append(f"{content_indent}<center>{formula_img}</center>")
+                continue
+
+            out.append(f"{content_indent}{render_inline(stripped_next)}<br />")
             i += 1
 
         out.append(f"{li_indent}</li>")
@@ -243,6 +412,39 @@ def trim_blank_edges(lines: List[str]) -> List[str]:
     while end > start and lines[end - 1] == "":
         end -= 1
     return lines[start:end]
+
+
+def indent_html_block(block: str, depth: int = 1) -> List[str]:
+    prefix = "\t" * depth
+    indented: List[str] = []
+    for line in block.splitlines():
+        indented.append(f"{prefix}{line}" if line else "")
+    return indented
+
+
+def strip_blockquote_marker(line: str) -> Optional[str]:
+    match = BLOCKQUOTE_RE.match(line)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def parse_blockquote(lines: List[str], start: int) -> Tuple[List[str], int]:
+    quote_lines: List[str] = []
+    i = start
+
+    while i < len(lines):
+        quote_line = strip_blockquote_marker(lines[i])
+        if quote_line is None:
+            break
+        quote_lines.append(quote_line)
+        i += 1
+
+    inner_html = render_markdown(quote_lines)
+    out = ["<blockquote>"]
+    out.extend(indent_html_block(inner_html))
+    out.append("</blockquote>")
+    return out, i
 
 
 def render_markdown(lines: List[str]) -> str:
@@ -263,6 +465,11 @@ def render_markdown(lines: List[str]) -> str:
             rendered.append(f"<center>{formula_img}</center>")
             continue
 
+        if strip_blockquote_marker(line) is not None:
+            block, i = parse_blockquote(lines, i)
+            rendered.extend(block)
+            continue
+
         list_match = LIST_ITEM_RE.match(line)
         if list_match:
             base_indent = indent_width(list_match.group(1))
@@ -270,7 +477,10 @@ def render_markdown(lines: List[str]) -> str:
             rendered.extend(block)
             continue
 
-        rendered.append(f"{render_inline(stripped)}<br />")
+        if is_raw_html_line(stripped):
+            rendered.append(stripped)
+        else:
+            rendered.append(f"{render_inline(stripped)}<br />")
         i += 1
 
     return "\n".join(trim_blank_edges(rendered))
@@ -283,11 +493,7 @@ def compose_description(background_lines: List[str], description_lines: List[str
 
     if background_html:
         chunks.append("<blockquote>")
-        for line in background_html.splitlines():
-            if line:
-                chunks.append(f"\t{line}")
-            else:
-                chunks.append("")
+        chunks.extend(indent_html_block(background_html))
         chunks.append("</blockquote>")
 
     if description_html:
